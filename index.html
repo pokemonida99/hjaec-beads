@@ -3,102 +3,138 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#0f0f11">
+<meta name="theme-color" content="#0c0c0e">
 <meta name="description" content="剛上完鍍膜的引擎蓋，20 秒把水珠聚成一顆。慢慢拖，太快會斷開；踩著拍子合併更亮。">
 <title>水珠聚一顆｜紅分子 HJAEC</title>
+<meta property="og:type" content="website">
+<meta property="og:title" content="水珠聚一顆｜紅分子 HJAEC">
+<meta property="og:description" content="20 秒，把鍍膜上的水珠聚成一顆。慢慢拖，踩著拍子合併！">
+<meta property="og:url" content="https://pokemonida99.github.io/hjaec-beads/">
+<meta property="og:image" content="https://pokemonida99.github.io/hjaec-beads/cover.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://pokemonida99.github.io/hjaec-beads/cover.jpg">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='4' width='56' height='56' rx='5' fill='%23d9141c'/%3E%3Ccircle cx='32' cy='34' r='15' fill='%23fff' fill-opacity='.9'/%3E%3Ccircle cx='27' cy='29' r='4' fill='%23d9141c'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=3">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,800;1,800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
-<main id="game">
+<main id="game" class="intro">
   <canvas id="cv" aria-label="引擎蓋上的水珠，按住慢慢拖曳" role="application" tabindex="0"></canvas>
 
-  <header>
-    <div class="brand">
-      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#d9141c"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="10.2" cy="10.8" r="3.2"/><circle cx="27.6" cy="10.8" r="3.2"/><circle cx="10.2" cy="28.8" r="3.2"/><circle cx="27.6" cy="28.8" r="3.2"/><path d="M12.5 8.5L24 -2M12.4 26.5L25.4 13.1M30 31L42 43"/></g></svg>
-      <div><b>紅分子 HJAEC</b><span>水珠聚一顆 · 20 s</span></div>
+  <!-- 儀表板 -->
+  <header id="dash">
+    <div id="shift" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="dash-row">
+      <div class="gauge bezel">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <radialGradient id="gface" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#1d1e22"/><stop offset="1" stop-color="#08080a"/></radialGradient>
+          </defs>
+          <circle cx="60" cy="60" r="56" fill="url(#gface)"/>
+          <g id="ticks"></g>
+          <text id="gauge-label" x="60" y="44">撥水率</text>
+          <path d="M 102.8 46.1 A 45 45 0 0 1 99.0 82.5" fill="none" stroke="#e01822" stroke-width="5"/>
+          <g id="needle"><path d="M58.2 60 L60 14 L61.8 60 Z" fill="#ff2a32"/><circle cx="60" cy="60" r="6.5" fill="#c9ccd1"/><circle cx="60" cy="60" r="3" fill="#2a2b30"/></g>
+        </svg>
+        <div class="gauge-read"><span>撥水率</span><b id="pct">0</b><em>%</em></div>
+      </div>
+
+      <div class="plate center">
+        <div class="title-plate">
+          <svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#d9141c"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="10.2" cy="10.8" r="3.2"/><circle cx="27.6" cy="10.8" r="3.2"/><circle cx="10.2" cy="28.8" r="3.2"/><circle cx="27.6" cy="28.8" r="3.2"/><path d="M12.5 8.5L24 -2M12.4 26.5L25.4 13.1M30 31L42 43"/></g></svg>
+          <span class="brand">紅分子 HJAEC</span>
+          <b class="name">水珠聚一顆</b>
+          <span id="best" class="sub"></span>
+        </div>
+        <div class="grade-plate">
+          <span class="lab">評等</span><b id="grade">F</b>
+          <div class="combo"><span class="lab">連擊</span><b id="combo">0</b></div>
+        </div>
+      </div>
+
+      <div class="timer bezel">
+        <span class="lab">剩餘時間</span>
+        <div class="lcd"><i>88.8</i><strong id="time">20.0</strong></div>
+        <span id="pieces" class="sub">水珠 0 顆</span>
+      </div>
     </div>
-    <nav>
-      <button id="sound" class="icon" aria-label="聲音" aria-pressed="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/><path class="on" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/><path class="off" d="M15.5 9.5l5 5M20.5 9.5l-5 5"/></svg>
-      </button>
-      <button id="help" class="icon" aria-label="玩法說明">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5v.8"/><circle cx="12" cy="16.9" r=".6" fill="currentColor"/></svg>
-      </button>
-    </nav>
   </header>
 
-  <section id="intro" class="top">
-    <h1>水珠聚一顆</h1>
-    <p class="lead">剛上完鍍膜，引擎蓋全是水珠。<br>慢慢拖，把它們聚成一顆。</p>
-  </section>
-
-  <section id="hud" class="top" hidden>
-    <div class="stats">
-      <div><span>撥水分數</span><strong><b id="grade">F</b><em id="pct">0%</em></strong></div>
-      <div class="time"><span>剩餘時間</span><strong id="time">20.0</strong></div>
-    </div>
-    <div class="track"><i id="progress"></i><u></u><u></u><u></u><u></u><u></u><u></u><u></u><u></u><u></u></div>
-    <p id="hint" aria-live="polite">準備</p>
-  </section>
-
+  <div id="ticker"><span id="hint">按住水珠，慢慢拖向另一顆</span></div>
   <div id="stage"></div>
 
-  <section id="intro-actions" class="bottom">
-    <button id="start" class="primary">開始洗車</button>
-    <p class="best" id="best"></p>
-  </section>
-
-  <footer id="controls" class="bottom" hidden>
-    <button id="pause" class="text-button">暫停</button>
-    <div class="mid"><div id="beats" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span id="pieces">水珠 0 顆</span></div>
-    <button id="finish" class="text-button">提前收工</button>
+  <!-- 下方控制台 -->
+  <footer id="console">
+    <button id="sound" class="toggle" aria-pressed="true"><i></i><span>音效</span></button>
+    <button id="pause" class="toggle" aria-pressed="false"><i></i><span>暫停</span></button>
+    <button id="help" class="toggle" aria-pressed="false"><i></i><span>說明</span></button>
+    <button id="engine" class="engine"><span id="engine-label">開始</span></button>
   </footer>
 
+  <!-- 結算：洗車工單 -->
   <section id="result" class="panel" hidden>
-    <div class="card">
-      <p class="eyebrow">結算</p>
-      <div class="final"><strong id="final">S</strong><div><h2 id="result-title"></h2><p id="summary"></p></div></div>
-      <p id="record" class="small"></p>
+    <div class="ticket">
+      <div class="ticket-head">
+        <svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#d9141c"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="10.2" cy="10.8" r="3.2"/><circle cx="27.6" cy="10.8" r="3.2"/><circle cx="10.2" cy="28.8" r="3.2"/><circle cx="27.6" cy="28.8" r="3.2"/><path d="M12.5 8.5L24 -2M12.4 26.5L25.4 13.1M30 31L42 43"/></g></svg>
+        <div><b>紅分子 HJAEC 洗車工單</b><span id="ticket-no">No. 0000</span></div>
+      </div>
+      <h2 id="result-title"></h2>
+      <p id="result-sub" class="sub"></p>
+      <ul class="rows" id="rows"></ul>
+      <div id="stamp" class="stamp"><b id="final">S</b><span>撥水檢驗</span></div>
+      <p id="record" class="record"></p>
       <a class="product" href="https://www.hjaec.com/" target="_blank" rel="noopener">
         <img src="assets/coating.png" alt="紅分子 奈米陶瓷封體鍍膜">
-        <div><span>這台車上的是</span><b>紅分子 奈米陶瓷封體鍍膜</b><em>到官網看看 →</em></div>
+        <div><span>施工用品</span><b>紅分子 奈米陶瓷封體鍍膜</b><em>到官網看看 →</em></div>
       </a>
-      <div class="actions">
-        <button id="restart" class="primary">再洗一台</button>
-        <button id="share" class="secondary">存成圖片</button>
-        <button id="home" class="text-button">回首頁</button>
-      </div>
+    </div>
+    <div class="ticket-actions">
+      <button id="restart" class="btn red">再洗一台</button>
+      <button id="share" class="btn">存成圖片</button>
+      <button id="home" class="btn ghost">回首頁</button>
     </div>
   </section>
 
   <section id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
-    <div>
+    <div class="metal">
       <p class="eyebrow">紅分子 HJAEC</p>
       <h2 id="modal-title">玩法說明</h2>
-      <p>剛上完奈米陶瓷封體鍍膜，引擎蓋上全是水珠。</p>
-      <p>按住一顆水珠慢慢拖，碰到別顆就會聚在一起。拖太快會斷開，越大顆越要慢；拖的時候圈圈變紅就是快斷了。</p>
-      <p>邊框和下方節拍燈會跟著拍子閃。拖著水珠時外圈會往內縮，縮到水珠邊緣的瞬間撞上別顆就是「踩拍」，加分；連續 4 次進入 FEVER，加分翻倍。20 秒後，看最大那顆佔了全部水量多少。</p>
+      <p>剛上完奈米陶瓷封體鍍膜，引擎蓋上全是水珠。按住一顆慢慢拖，碰到別顆就會聚在一起。拖太快會斷開，越大顆越要慢；圈圈變紅就是快斷了。</p>
+      <p>上方的換檔燈從兩邊往中間亮，<b>全亮那一下就是拍子</b>。拖著水珠時外圈會往內縮，縮到水珠邊緣時撞上別顆＝踩拍，加分；連續 4 次進入 FEVER，加分翻倍。</p>
+      <p>20 秒後，看最大那顆佔了全部水量多少。</p>
       <p class="scale">F → C → B → A → S</p>
-      <p class="small keys">方向鍵 移動 · 空白鍵 抓／放 · Esc 暫停</p>
-      <button id="resume" class="primary">知道了</button>
+      <p class="keys">方向鍵 移動 · 空白鍵 抓／放 · Esc 暫停</p>
+      <button id="resume" class="btn red">知道了</button>
     </div>
   </section>
 
   <section id="share-panel" class="modal" role="dialog" aria-modal="true" hidden>
-    <div class="share-sheet">
+    <div class="metal share-sheet">
       <img id="share-image" alt="結算圖">
-      <p class="small">手機可長按圖片儲存</p>
-      <a id="download" class="primary" download="hjaec-水珠聚一顆.png">下載圖片</a>
-      <button id="close-share" class="text-button">關閉</button>
+      <p class="keys">手機可長按圖片儲存</p>
+      <a id="download" class="btn red" download="hjaec-水珠聚一顆.jpg">下載圖片</a>
+      <button id="close-share" class="btn ghost">關閉</button>
     </div>
   </section>
+
+  <!-- 開機封面：點一下才能開聲音 -->
+  <section id="boot">
+    <div class="boot-art"></div>
+    <div class="boot-copy">
+      <div class="boot-brand"><svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#d9141c"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="10.2" cy="10.8" r="3.2"/><circle cx="27.6" cy="10.8" r="3.2"/><circle cx="10.2" cy="28.8" r="3.2"/><circle cx="27.6" cy="28.8" r="3.2"/><path d="M12.5 8.5L24 -2M12.4 26.5L25.4 13.1M30 31L42 43"/></g></svg><span>紅分子 HJAEC</span></div>
+      <h1><span>水珠</span><span>聚一顆</span></h1>
+      <p>鍍膜撥水 × 節奏小遊戲</p>
+    </div>
+    <button id="ignite" class="engine big"><span>發動</span></button>
+    <p class="boot-tip">點一下發動，有音樂</p>
+  </section>
 </main>
-<script src="js/core.js?v=3"></script>
-<script src="js/audio.js?v=3"></script>
-<script src="js/game.js?v=3"></script>
+<script src="js/core.js?v=8"></script>
+<script src="js/audio.js?v=8"></script>
+<script src="js/game.js?v=8"></script>
 </body>
 </html>

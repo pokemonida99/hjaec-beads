@@ -291,6 +291,7 @@ const sfx = {
     I.crash(t, 0.8);
     [72, 76, 79, 84, 88].forEach((m, i) => I.bell(t + i * 0.05, m, 0.7));
   },
+  stamp() { if (!ctx || muted) return; const t = ctx.currentTime + 0.005; I.kick(t, 0.9); I.clap(t + 0.01, 0.5); },
   grab() { if (ctx && !muted) I.bloop(ctx.currentTime + 0.005, 84, 0.25, sfxBus); },
   tap() { if (ctx && !muted) I.stick(ctx.currentTime + 0.005, true); },
 };

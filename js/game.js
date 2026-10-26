@@ -10,7 +10,7 @@ const TAU = Math.PI * 2;
 const cv = $('#cv'), ctx = cv.getContext('2d');
 const under = document.createElement('canvas'), uctx = under.getContext('2d');
 let bg = document.createElement('canvas');
-let DPR = 1, VW = 0, VH = 0;
+let DPR = 1, VW = 0, VH = 0, stageR = { top: 0, h: 0 };
 const V = { s: 1, ox: 0, oy: 0 };          // 邏輯座標 → CSS px：x*s+ox
 const FIT = { x0: -40, x1: 1040, y0: -70, y1: 1240 };
 
@@ -32,6 +32,7 @@ function resize() {
   VW = innerWidth; VH = innerHeight; DPR = Math.min(2, devicePixelRatio || 1);
   cv.width = under.width = Math.round(VW * DPR); cv.height = under.height = Math.round(VH * DPR);
   const r = $('#stage').getBoundingClientRect();
+  stageR = { top: r.top, h: r.height };
   const sw = Math.max(200, r.width - 24), sh = Math.max(200, r.height + 12);
   V.s = Math.min(sw / (FIT.x1 - FIT.x0), sh / (FIT.y1 - FIT.y0));
   V.ox = r.left + r.width / 2 - 500 * V.s;
@@ -323,7 +324,8 @@ function drawScene(B, t) {
 // 整個畫面的邊框跟著拍子閃（Patapon 那種），第一拍最亮
 function drawBeatFrame(B) {
   const live = state === 'play' || state === 'count';
-  const W2 = VW, H2 = VH;
+  const W2 = VW, H2 = stageR.h;   // 只閃在儀表板與控制台之間的遊戲區
+  ctx.save(); ctx.translate(0, stageR.top);
   let a = B.bar >= 0 ? B.env : 0;
   if (state === 'outro' || state === 'result') a *= 0.25;
   const strength = live ? (B.inBar === 0 ? 1 : 0.7) : 0.28;
@@ -350,6 +352,7 @@ function drawBeatFrame(B) {
     edge('255,214,120', 0.8 * flash.gold, 120 * flash.gold + 20);
   }
   if (flash.red > 0) edge('255,40,50', 0.7 * flash.red, 110 * flash.red + 20);
+  ctx.restore();
 }
 
 function dropScale(d) {
@@ -436,9 +439,9 @@ function score() { return Math.min(1, Core.share(W) + stats.bonus); }
 
 function show(id, on) { $(id).hidden = !on; }
 function screen(name) {
-  show('#intro', name === 'intro'); show('#intro-actions', name === 'intro');
-  show('#hud', name === 'play'); show('#controls', name === 'play');
+  $('#game').className = name;
   show('#result', name === 'result');
+  $('#engine-label').textContent = { intro: '開始', play: '收工', result: '再洗' }[name];
 }
 
 function newLevel(seed) {
@@ -464,7 +467,7 @@ function endGame(early) {
   if (state !== 'play') return;
   Core.release(W); grabbedBy = null;
   if (stats.fever) { stats.fever = false; Sound.setFever(false); }
-  finalScore = score();
+  finalScore = score(); stats.share = Core.share(W);   // 收工當下就記下來，之後水珠會滑落
   state = 'outro'; outroAt = performance.now() / 1000;
   if (early) Sound.play('game', onSongEnd, 0.03, 11 * 16);   // 直接跳到收尾和弦
   // 水珠往車頭滑落：大顆先走，越大越快
@@ -494,9 +497,16 @@ function showResult() {
   const g = Core.grade(finalScore), [t1, t2] = TITLES[g];
   $('#final').textContent = g;
   $('#result-title').textContent = t1;
-  $('#summary').innerHTML = `${t2}<br>最大水珠佔 <b>${Math.round(Core.share(W) * 100)}%</b>　踩拍 <b>${stats.perfect}</b> 次　最高 <b>${stats.maxCombo}</b> 連　斷開 <b>${stats.splits}</b> 次`;
-  $('#record').textContent = stats.newBest ? `新紀錄！分數 ${Math.round(finalScore * 100)}` : `分數 ${Math.round(finalScore * 100)}　最佳 ${Math.round(stats.best * 100)}`;
+  $('#result-sub').textContent = t2;
+  $('#ticket-no').textContent = `No. ${String(runSeed).padStart(5, '0')}　${new Date().toLocaleDateString('zh-TW')}`;
+  const rows = [['最大水珠佔', `${Math.round(stats.share * 100)}%`], ['踩拍合併', `${stats.perfect} 次`], ['最高連擊', `${stats.maxCombo} 連`],
+    ['斷開', `${stats.splits} 次`], ['總分', `${Math.round(finalScore * 100)}`]];
+  $('#rows').innerHTML = rows.map(([k, v]) => `<li>${k}<b>${v}</b></li>`).join('');
+  $('#record').textContent = stats.newBest ? '★ 新紀錄' : `最佳紀錄 ${Core.grade(stats.best)} · ${Math.round(stats.best * 100)} 分`;
   screen('result');
+  // 檢驗章晚一點蓋下去
+  const st = $('#stamp'); st.classList.remove('hit'); st.style.opacity = 0;
+  setTimeout(() => { st.style.opacity = ''; void st.offsetWidth; st.classList.add('hit'); Sound.sfx.stamp(); }, 450);
 }
 
 function goHome() {
@@ -641,22 +651,54 @@ function outroTick(dt, t) {
   if (!resultShown && el > 2.1) showResult();
 }
 
-const beatBox = $('#beats'), beatEls = [...beatBox.children];
+// 儀表板：撥水率錶的刻度
+(() => {
+  const g = $('#ticks'), NS = 'http://www.w3.org/2000/svg';
+  for (let v = 0; v <= 100; v += 5) {
+    const a = (-120 + 240 * v / 100) * Math.PI / 180, major = v % 10 === 0;
+    const r0 = major ? 41 : 44, r1 = 49;
+    const l = document.createElementNS(NS, 'line');
+    l.setAttribute('x1', 60 + Math.sin(a) * r0); l.setAttribute('y1', 60 - Math.cos(a) * r0);
+    l.setAttribute('x2', 60 + Math.sin(a) * r1); l.setAttribute('y2', 60 - Math.cos(a) * r1);
+    l.setAttribute('stroke-width', major ? 2 : 1); g.appendChild(l);
+    if (v % 20 === 0) {
+      const tx = document.createElementNS(NS, 'text');
+      tx.setAttribute('x', 60 + Math.sin(a) * 32); tx.setAttribute('y', 60 - Math.cos(a) * 32); tx.textContent = v; g.appendChild(tx);
+    }
+  }
+})();
+const UI = { time: $('#time'), grade: $('#grade'), pct: $('#pct'), combo: $('#combo'), pieces: $('#pieces'), hint: $('#hint'),
+  needle: $('#needle'), shift: $('#shift'), leds: [...$('#shift').children], root: $('#game') };
+let gaugeV = 0;
 function hud(B, t) {
-  if (state !== 'count' && state !== 'play') return;
-  const left = timeLeft();
-  $('#time').textContent = left.toFixed(1);
-  $('#time').classList.toggle('hurry', state === 'play' && left < 4);
-  $('#time').style.transform = `scale(${1 + B.env * (left < 4 && state === 'play' ? 0.12 : 0.05)})`;
-  $('#progress').style.width = `${(state === 'play' ? 1 - left / 20 : 0) * 100}%`;
-  const sc = score();
-  $('#grade').textContent = Core.grade(sc);
-  $('#pct').textContent = Math.round(sc * 100) + '%';
+  const live = state === 'count' || state === 'play';
+  const left = live ? timeLeft() : state === 'intro' ? 20 : 0;
+  const tx = left.toFixed(1);
+  if (UI.time.textContent !== tx) UI.time.textContent = tx;
+  UI.time.classList.toggle('hurry', state === 'play' && left < 4);
+  UI.root.style.setProperty('--beat', B.bar >= 0 ? B.env.toFixed(3) : 0);
+  // 撥水率錶：指針有點慣性
+  const sc = state === 'intro' ? Core.share(W) : state === 'play' || state === 'count' ? score() : finalScore;
+  gaugeV += (sc - gaugeV) * 0.12;
+  UI.needle.style.transform = `rotate(${-120 + 240 * gaugeV + (live ? B.env * 1.5 : 0)}deg)`;
+  UI.pct.textContent = Math.round(sc * 100);
+  UI.grade.textContent = Core.grade(sc);
+  UI.combo.textContent = stats.combo;
   const big = Core.biggest(W.drops);
-  $('#pieces').textContent = `水珠 ${W.drops.length} 顆 · 最大 ${big ? (big.r * 2 * HOOD.cm).toFixed(1) : 0} cm`;
-  const h = $('#hint');
+  UI.pieces.textContent = `${W.drops.length} 顆 · 最大 ${big ? (big.r * 2 * HOOD.cm).toFixed(1) : 0}cm`;
+  // 換檔燈當節拍燈：從兩邊往中間亮，全亮＝拍點
+  const on = B.bar >= 0;
+  const k = on ? Math.ceil(B.f * 6) : 0, flashOn = on && B.f < 0.14;
+  UI.leds.forEach((el, i) => { const d = Math.min(i, 11 - i); el.classList.toggle('on', on && d < k); });
+  UI.shift.classList.toggle('flash', flashOn);
+  UI.shift.classList.toggle('down', on && B.inBar === 0);
+  UI.shift.classList.toggle('fever', stats.fever && state === 'play');
+  UI.shift.classList.toggle('hurry', state === 'play' && left < 4);
+  const h = UI.hint;
   let text, cls = '';
-  if (state === 'count') { const n = Math.max(0, Math.floor(B.p / Sound.SPB)); text = B.p < 0 ? '準備' : ['3', '2', '1', '開始！'][Math.min(3, n)]; cls = 'count'; }
+  if (state === 'intro') { text = Sound.ready ? '按右下「開始」發動，把水珠聚成一顆' : '點一下畫面開音樂'; }
+  else if (state === 'outro' || state === 'result') { text = '收工！看看工單'; cls = 'good'; }
+  else if (state === 'count') { const n = Math.max(0, Math.floor(B.p / Sound.SPB)); text = B.p < 0 ? '準備' : ['3', '2', '1', '開始！'][Math.min(3, n)]; cls = 'count'; }
   else if (hintMsg && t < hintMsg.until) { text = hintMsg.text; cls = hintMsg.cls; }
   else if (W.held && W.held.stress > 0.35) { text = '太快了！快斷了'; cls = 'warn'; }
   else if (stats.fever) { text = `FEVER  ${stats.combo} 連`; cls = 'fever'; }
@@ -664,15 +706,7 @@ function hud(B, t) {
   else if (left < 4) { text = `最後 ${Math.ceil(left)} 秒！`; cls = 'warn'; }
   else text = W.held ? '外圈縮到水珠邊緣時撞上去＝踩拍' : left > 14 ? '按住水珠，慢慢拖向另一顆' : '邊框閃的瞬間合併，加分';
   if (h.textContent !== text) h.textContent = text;
-  h.className = cls;
-  // 節拍燈：四格，亮在目前這一拍
-  const lit = B.bar >= 0 ? B.inBar : -1;
-  beatEls.forEach((el, i) => {
-    el.classList.toggle('on', i === lit);
-    el.style.transform = `rotate(45deg) scale(${i === lit ? 1 + 0.55 * B.env : 1})`;
-  });
-  beatBox.classList.toggle('fever', stats.fever && state === 'play');
-  beatBox.classList.toggle('hurry', state === 'play' && left < 4);
+  if (h.className !== cls) h.className = cls;
 }
 
 // ---------- 操作 ----------
@@ -715,6 +749,7 @@ function keyTick(dt) {
 addEventListener('keydown', e => {
   if (e.key.startsWith('Arrow')) { kb.keys[e.key] = true; e.preventDefault(); }
   else if (e.key === ' ' || e.key === 'Enter') {
+    if (!$('#boot').hidden && !$('#boot').classList.contains('gone')) { ignite(); e.preventDefault(); return; }
     if (state === 'intro' && !(e.target.closest && e.target.closest('button,a'))) { startGame(); e.preventDefault(); return; }
     if (state === 'play' && !paused) {
       e.preventDefault(); kb.on = true;
@@ -730,21 +765,34 @@ function togglePause(force) {
   const p = force ?? !paused;
   if (p === paused) return;
   paused = p;
+  $('#pause').setAttribute('aria-pressed', p);
   if (p) { Core.release(W); grabbedBy = null; activePointer = null; Sound.pause(); $('#modal-title').textContent = '暫停中'; $('#resume').textContent = '繼續'; show('#modal', true); }
-  else { Sound.resume(); show('#modal', false); }
+  else { Sound.resume(); show('#modal', false); $('#help').setAttribute('aria-pressed', 'false'); }
 }
 function closeModals() {
   if (!$('#modal').hidden) { if (paused) togglePause(false); else show('#modal', false); }
+  $('#help').setAttribute('aria-pressed', 'false');
   show('#share-panel', false);
 }
-$('#start').onclick = () => startGame();
+$('#engine').onclick = () => {
+  Sound.init();
+  if (state === 'intro' || state === 'result') startGame();
+  else if (state === 'play') endGame(true);
+};
 $('#help').onclick = () => {
+  $('#help').setAttribute('aria-pressed', 'true');
   if (state === 'play' || state === 'count') { togglePause(true); $('#modal-title').textContent = '玩法說明'; return; }
   $('#modal-title').textContent = '玩法說明'; $('#resume').textContent = '知道了'; show('#modal', true);
 };
 $('#resume').onclick = () => closeModals();
-$('#pause').onclick = () => togglePause(true);
-$('#finish').onclick = () => endGame(true);
+$('#pause').onclick = () => { if (state === 'play' || state === 'count') togglePause(); };
+// 開機封面：點一下才發動（瀏覽器規定要點過才能出聲）
+function ignite() {
+  const b = $('#boot'); if (b.classList.contains('gone')) return;
+  Sound.init(); Sound.play('title'); Sound.sfx.stamp();
+  b.classList.add('gone'); setTimeout(() => { b.hidden = true; }, 520);
+}
+$('#boot').addEventListener('pointerdown', e => { e.preventDefault(); ignite(); });
 $('#restart').onclick = () => startGame();
 $('#home').onclick = () => goHome();
 $('#share').onclick = () => shareImage();
@@ -768,16 +816,18 @@ let lastTouch = 0;
 document.addEventListener('touchend', e => { const n = Date.now(); if (n - lastTouch < 320) e.preventDefault(); lastTouch = n; }, { passive: false });
 
 // ---------- 結算圖 ----------
+const COVER = new Image(); COVER.src = 'assets/cover_tall.jpg';
 function shareImage() {
   const w = 1080, h = 1350, c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
   g.fillStyle = '#0f0f11'; g.fillRect(0, 0, w, h);
-  // 引擎蓋截圖
-  const hx = (V.ox - 30 * V.s) * DPR, hy = (V.oy - 30 * V.s) * DPR, hw = 1060 * V.s * DPR, hh = 1150 * V.s * DPR;
-  const sh = 760, sw = sh * hw / hh;
-  g.globalAlpha = 0.9; g.drawImage(under, hx, hy, hw, hh, (w - sw) / 2, 330, sw, sh); g.globalAlpha = 1;
-  const gr = g.createLinearGradient(0, 300, 0, 1150); gr.addColorStop(0, '#0f0f11'); gr.addColorStop(0.25, 'rgba(15,15,17,.2)'); gr.addColorStop(0.8, 'rgba(15,15,17,.2)'); gr.addColorStop(1, '#0f0f11');
-  g.fillStyle = gr; g.fillRect(0, 300, w, 860);
+  // 底圖用封面（GPT 生的鍍膜水珠特寫），壓暗後放字
+  if (COVER.complete && COVER.naturalWidth) {
+    const k = Math.max(w / COVER.naturalWidth, h / COVER.naturalHeight), cw = COVER.naturalWidth * k, ch = COVER.naturalHeight * k;
+    g.drawImage(COVER, (w - cw) / 2, (h - ch) / 2, cw, ch);
+  }
+  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(8,8,10,.92)'); gr.addColorStop(0.45, 'rgba(8,8,10,.55)'); gr.addColorStop(1, 'rgba(8,8,10,.9)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
   g.fillStyle = '#d9141c'; g.fillRect(0, 0, w, 10);
   drawMark(g, 110, 120, 84);
   g.fillStyle = '#f3f1ec'; g.font = '700 40px "PingFang TC", sans-serif'; g.textBaseline = 'middle';
@@ -789,9 +839,9 @@ function shareImage() {
   g.shadowBlur = 0;
   g.font = '800 64px "PingFang TC", sans-serif'; g.fillText(TITLES[gd][0], w / 2, 1000);
   g.fillStyle = '#cfccc6'; g.font = '500 36px "PingFang TC", sans-serif';
-  g.fillText(`最大水珠佔 ${Math.round(Core.share(W) * 100)}%　踩拍合併 ${stats.perfect} 次`, w / 2, 1080);
+  g.fillText(`最大水珠佔 ${Math.round(stats.share * 100)}%　踩拍合併 ${stats.perfect} 次`, w / 2, 1080);
   g.fillStyle = '#d9141c'; g.font = '700 34px "PingFang TC", sans-serif'; g.fillText('hjaec.com', w / 2, 1250);
-  const url = c.toDataURL('image/png');
+  const url = c.toDataURL('image/jpeg', 0.9);
   $('#share-image').src = url; $('#download').href = url;
   show('#share-panel', true);
 }
