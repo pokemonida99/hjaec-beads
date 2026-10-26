@@ -19,7 +19,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,800;1,800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <main id="game" class="intro">
@@ -103,9 +103,12 @@
     <div class="metal">
       <p class="eyebrow">紅分子 HJAEC</p>
       <h2 id="modal-title">玩法說明</h2>
-      <p>剛上完奈米陶瓷封體鍍膜，引擎蓋上全是水珠。按住一顆慢慢拖，碰到別顆就會聚在一起。拖太快會斷開，越大顆越要慢；圈圈變紅就是快斷了。</p>
-      <p>上方的換檔燈從兩邊往中間亮，<b>全亮那一下就是拍子</b>。拖著水珠時外圈會往內縮，縮到水珠邊緣時撞上別顆＝踩拍，加分；連續 4 次進入 FEVER，加分翻倍。</p>
-      <p>20 秒後，看最大那顆佔了全部水量多少。</p>
+      <p class="only-drops">剛上完奈米陶瓷封體鍍膜，引擎蓋上全是水珠。按住一顆慢慢拖，碰到別顆就會聚在一起。拖太快會斷開，越大顆越要慢；圈圈變紅就是快斷了。</p>
+      <p class="only-drops">上方的換檔燈從兩邊往中間亮，<b>全亮那一下就是拍子</b>。拖著水珠時外圈會往內縮，縮到水珠邊緣時撞上別顆＝踩拍，加分；連續 4 次進入 FEVER，加分翻倍。</p>
+      <p class="only-drops">20 秒後，看最大那顆佔了全部水量多少。</p>
+      <p class="only-foam">髒髒的引擎蓋，要用高泡洗車精整台泡滿。<b>換檔燈全亮的那一下按下去</b>，就會噴出一大坨泡沫；沒踩到拍只噴一點點，一拍只能噴一次。</p>
+      <p class="only-foam">按住不放可以把泡沫慢慢抹開，薄薄透明的地方不算蓋到。抹太快泡沫會破洞；圈圈變紅就是快破了。連續 4 次踩拍進入 FEVER，泡沫加量。</p>
+      <p class="only-foam">20 秒後沖水，看泡沫蓋住了引擎蓋多少。標題畫面點中間的牌子可以換回水珠版。</p>
       <p class="scale">F → C → B → A → S</p>
       <p class="keys">方向鍵 移動 · 空白鍵 抓／放 · Esc 暫停</p>
       <button id="resume" class="btn red">知道了</button>
@@ -133,8 +136,9 @@
     <p class="boot-tip">點一下發動，有音樂</p>
   </section>
 </main>
-<script src="js/core.js?v=8"></script>
-<script src="js/audio.js?v=8"></script>
-<script src="js/game.js?v=8"></script>
+<script src="js/core.js?v=9"></script>
+<script src="js/foam.js?v=9"></script>
+<script src="js/audio.js?v=9"></script>
+<script src="js/game.js?v=10"></script>
 </body>
 </html>

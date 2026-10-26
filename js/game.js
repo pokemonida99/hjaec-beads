@@ -26,6 +26,17 @@ let hintMsg = null;        // {text, cls, until}
 let kb = { x: 500, y: 520, on: false, keys: {} };
 let demo = { wait: 1, target: null, px: 500, py: 520, on: true, reset: 0 };
 let grabbedBy = null;      // 'pointer' | 'key' | 'demo'
+// 兩種玩法：drops＝水珠聚一顆、foam＝泡沫鋪滿車
+let mode = /foam/.test(location.hash) ? 'foam' : 'drops';
+let F = null;                                  // 泡沫格子（Foam.create）
+let brushPt = { x: 500, y: 520, on: false, seen: false };   // 泡沫版手指位置
+let lastSprayBeat = -99, rinseY = -1e9;
+const dirtC = document.createElement('canvas'), foamL = document.createElement('canvas');
+const MODE = {
+  drops: { name: '水珠聚一顆', gauge: '撥水率', key: 'hjaec-beads-best', product: ['assets/coating.png', '紅分子 奈米陶瓷封體鍍膜'] },
+  foam: { name: '泡沫鋪滿車', gauge: '覆蓋率', key: 'hjaec-foam-best', product: ['assets/shampoo.png', '紅分子 超效除汙高泡濃縮洗車精'] },
+};
+const gradeOf = v => mode === 'foam' ? Foam.grade(v) : Core.grade(v);
 
 // ---------- 版面 ----------
 function resize() {
@@ -38,6 +49,8 @@ function resize() {
   V.ox = r.left + r.width / 2 - 500 * V.s;
   V.oy = r.top + r.height / 2 + 6 - ((FIT.y0 + FIT.y1) / 2) * V.s;
   buildBg();
+  foamL.width = cv.width; foamL.height = cv.height;
+  buildDirt();
 }
 const toL = (cx, cy) => [(cx - V.ox) / V.s, (cy - V.oy) / V.s];
 const setL = c => c.setTransform(DPR * V.s, 0, 0, DPR * V.s, DPR * V.ox, DPR * V.oy);
@@ -120,6 +133,36 @@ function buildBg() {
   c.strokeStyle = 'rgba(10,0,0,.85)'; c.lineWidth = 5; c.stroke(HOOD_P);
   c.strokeStyle = 'rgba(255,200,200,.10)'; c.lineWidth = 2; c.save(); c.translate(0, 3); c.stroke(HOOD_P); c.restore();
 }
+
+// 泡沫版的髒引擎蓋：灰褐色污漬、泥點、水垢圈（沖水時被泡沫蓋到的地方會擦掉）
+function buildDirt() {
+  dirtC.width = cv.width; dirtC.height = cv.height;
+  const c = dirtC.getContext('2d'), R = Core.rng(23);
+  setL(c); c.save(); c.clip(HOOD_P);
+  c.fillStyle = 'rgba(70,58,46,.32)'; c.fillRect(0, 0, 1000, 1100);
+  for (let i = 0; i < 70; i++) {
+    const x = R() * 1000, y = R() * 1100, r = 30 + R() * 110;
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${80 + R() * 40 | 0},${64 + R() * 30 | 0},${48 + R() * 20 | 0},${0.25 + R() * 0.3})`); g.addColorStop(1, 'rgba(80,64,48,0)');
+    c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  for (let i = 0; i < 900; i++) { c.fillStyle = `rgba(${50 + R() * 50 | 0},${40 + R() * 30 | 0},30,${0.2 + R() * 0.5})`; c.beginPath(); c.arc(R() * 1000, R() * 1100, 1 + R() * 4, 0, TAU); c.fill(); }
+  c.strokeStyle = 'rgba(200,190,170,.18)'; c.lineWidth = 2;
+  for (let i = 0; i < 60; i++) { c.beginPath(); c.arc(R() * 1000, R() * 1100, 6 + R() * 14, 0, TAU); c.stroke(); }
+  c.restore();
+}
+// 泡泡紋理：小泡泡的輪廓與亮點
+const BUBBLES = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d'), R = Core.rng(5);
+  for (let i = 0; i < 90; i++) {
+    const x = R() * 160, y = R() * 160, r = 2 + R() * 9;
+    for (const [dx, dy] of [[0, 0], [160, 0], [-160, 0], [0, 160], [0, -160]]) {
+      g.strokeStyle = `rgba(150,160,175,${0.25 + R() * 0.25})`; g.lineWidth = 1; g.beginPath(); g.arc(x + dx, y + dy, r, 0, TAU); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.arc(x + dx - r * 0.35, y + dy - r * 0.35, r * 0.22, 0, TAU); g.fill();
+    }
+  }
+  return c;
+})();
 
 // 紅分子標誌（四個圓節點＋斜線），依官網 logo 重畫
 const MARK = { nodes: [[.255, .27], [.69, .27], [.255, .72], [.69, .72]], ro: .095, ri: .063, lw: .032 };
@@ -243,6 +286,7 @@ function drawScene(B, t) {
     ctx.fillStyle = gr; ctx.fillRect(x, 0, w, cv.height);
   }
 
+  if (mode === 'foam') drawFoam(B, t);
   // 3) 水珠
   const pulse = 1 + B.env * (B.bar >= 0 ? 0.035 : 0);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -274,6 +318,7 @@ function drawScene(B, t) {
   for (const p of fx.parts) {
     const X = V.ox + p.x * V.s, Y = V.oy + p.y * V.s, q = p.t / p.life;
     if (p.kind === 'star') star(ctx, X, Y, p.size * V.s * (1 - q * 0.5), 1 - q, p.rot);
+    else if (p.kind === 'puff') { ctx.fillStyle = `rgba(250,252,255,${0.85 * (1 - q)})`; ctx.beginPath(); ctx.arc(X, Y, p.size * V.s * (0.6 + q * 0.8), 0, TAU); ctx.fill(); }
     else { ctx.fillStyle = `rgba(255,225,220,${0.8 * (1 - q)})`; ctx.beginPath(); ctx.arc(X, Y, Math.max(0.8, p.size * V.s * (1 - q * 0.6)), 0, TAU); ctx.fill(); }
   }
   // 拖曳中的圈：越紅越快斷
@@ -300,13 +345,14 @@ function drawScene(B, t) {
     }
   }
   // 示範模式與鍵盤的游標
-  const cur = state === 'intro' && demo.on && W.held ? { x: demo.px, y: demo.py, on: !!W.held } : kb.on && state === 'play' ? { x: kb.x, y: kb.y, on: grabbedBy === 'key' } : null;
+  const cur = mode === 'foam' ? null : state === 'intro' && demo.on && W.held ? { x: demo.px, y: demo.py, on: !!W.held } : kb.on && state === 'play' ? { x: kb.x, y: kb.y, on: grabbedBy === 'key' } : null;
   if (cur) {
     const X = V.ox + cur.x * V.s, Y = V.oy + cur.y * V.s;
     ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(X, Y, cur.on ? 9 : 13, 0, TAU); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(X, Y, 3, 0, TAU); ctx.fill();
   }
+  drawFoamCursor(B, t);
   drawBeatFrame(B);
   for (const tx of fx.texts) {
     const q = tx.t / tx.life, X = V.ox + tx.x * V.s, Y = V.oy + tx.y * V.s - q * 34;
@@ -318,6 +364,66 @@ function drawScene(B, t) {
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(60,0,4,.85)'; ctx.strokeText(tx.text, X, Y);
     ctx.fillStyle = tx.color; ctx.fillText(tx.text, X, Y);
     ctx.globalAlpha = 1; ctx.restore();
+  }
+}
+
+// 泡沫層：每格畫一顆圓（厚度決定大小），先畫灰色影子再畫白色，最後貼泡泡紋理
+function drawFoam(B, t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(dirtC, 0, 0);
+  if (!F) return;
+  const L = foamL.getContext('2d');
+  L.setTransform(1, 0, 0, 1, 0, 0); L.clearRect(0, 0, foamL.width, foamL.height);
+  const k = V.s * DPR, C = Foam.CELL, GW = Foam.GW, cov = Foam.CFG.cover;
+  const pulse = 1 + (B.bar >= 0 ? B.env * 0.05 : 0);
+  const thin = new Path2D(), sh = new Path2D(), body = new Path2D();
+  for (let j = 0; j < Foam.GH; j++) for (let i = 0; i < GW; i++) {
+    const c = j * GW + i, f = F.f[c];
+    if (f < 0.08 || !F.inside[c]) continue;
+    const y0 = (j + 0.5) * C; if (y0 < rinseY) continue;
+    const X = (V.ox + ((i + 0.5) * C + F.jx[c]) * V.s) * DPR, Y = (V.oy + (y0 + F.jy[c]) * V.s) * DPR;
+    if (f < cov) { const r = C * 0.62 * k * F.js[c] * (0.5 + f); thin.moveTo(X + r, Y); thin.arc(X, Y, r, 0, TAU); continue; }
+    const r = C * 0.62 * k * F.js[c] * Math.min(1.9, 0.95 + (f - cov) * 0.6) * pulse;
+    sh.moveTo(X + r + 2 * DPR, Y + 3 * DPR); sh.arc(X + 2 * DPR, Y + 3 * DPR, r, 0, TAU);
+    body.moveTo(X + r, Y); body.arc(X, Y, r, 0, TAU);
+  }
+  L.fillStyle = 'rgba(235,240,245,.42)'; L.fill(thin);
+  L.fillStyle = 'rgba(150,158,170,1)'; L.fill(sh);
+  L.fillStyle = stats.fever && state === 'play' ? '#fff8e6' : '#fbfcfd'; L.fill(body);
+  L.globalCompositeOperation = 'source-atop';
+  L.fillStyle = L.createPattern(BUBBLES, 'repeat'); L.fillRect(0, 0, foamL.width, foamL.height);
+  L.globalCompositeOperation = 'source-over';
+  ctx.drawImage(foamL, 0, 0);
+  // 沖水：一條水幕從擋風玻璃往車頭掃
+  if (state === 'outro' && rinseY > -100 && rinseY < 1150) {
+    setL(ctx); ctx.save(); ctx.clip(HOOD_P);
+    const g = ctx.createLinearGradient(0, rinseY - 90, 0, rinseY + 20);
+    g.addColorStop(0, 'rgba(200,230,255,0)'); g.addColorStop(0.75, 'rgba(220,240,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,.85)');
+    ctx.fillStyle = g; ctx.fillRect(0, rinseY - 90, 1000, 110);
+    ctx.restore(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+}
+
+// 泡沫版的刷子圈與對拍縮圈
+function drawFoamCursor(B, t) {
+  if (mode !== 'foam' || !(state === 'play' || (state === 'intro' && demo.foamOn))) return;
+  const p = state === 'intro' ? { x: demo.px, y: demo.py, on: true } : brushPt;
+  if (!p.seen && state === 'play' && !p.on) return;
+  const X = V.ox + p.x * V.s, Y = V.oy + p.y * V.s, R = Foam.CFG.brushR * V.s;
+  const st = F ? clamp(F.stress) : 0;
+  ctx.strokeStyle = p.on ? (st > 0.05 ? `rgba(255,${220 - 200 * st | 0},${220 - 200 * st | 0},${0.6 + 0.4 * st})` : 'rgba(255,255,255,.55)') : 'rgba(255,255,255,.22)';
+  // 泡沫是白的，所以圈圈都先描一圈深色
+  const ring = (r, col, w) => {
+    ctx.lineWidth = w + 3; ctx.strokeStyle = 'rgba(20,6,8,.55)'; ctx.beginPath(); ctx.arc(X, Y, r, 0, TAU); ctx.stroke();
+    ctx.lineWidth = w; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(X, Y, r, 0, TAU); ctx.stroke();
+  };
+  const brushCol = ctx.strokeStyle;
+  ctx.setLineDash([5, 6]); ctx.lineDashOffset = -t * 30;
+  ring(R, brushCol, 1.5 + st * 2.5); ctx.setLineDash([]);
+  if (state === 'play') {
+    const col = stats.fever ? '255,201,60' : '255,52,60';
+    ring(10 + (R + 50) * (1 - B.f), `rgba(${col},${0.2 + 0.8 * B.f * B.f})`, 2 + 2.5 * B.f);
+    if (B.f < 0.18) { const q = B.f / 0.18; ring(10 + q * 22, `rgba(${col},${0.95 * (1 - q)})`, 5 * (1 - q) + 1.5); }
   }
 }
 
@@ -435,7 +541,7 @@ function updateFx(dt) {
 
 // ---------- 遊戲流程 ----------
 const timeLeft = () => state === 'play' ? Math.max(0, Sound.GAME_START + Sound.GAME_LEN - Sound.pos()) : state === 'count' ? 20 : 0;
-function score() { return Math.min(1, Core.share(W) + stats.bonus); }
+function score() { return mode === 'foam' ? (F ? Foam.coverage(F) : 0) : Math.min(1, Core.share(W) + stats.bonus); }
 
 function show(id, on) { $(id).hidden = !on; }
 function screen(name) {
@@ -445,7 +551,10 @@ function screen(name) {
 }
 
 function newLevel(seed) {
-  W = Core.makeLevel(seed);
+  if (mode === 'foam') { F = Foam.create(seed); W = { drops: [], total: 1, held: null, ox: 0, oy: 0, tx: 0, ty: 0, t: 0 }; }
+  else { F = null; W = Core.makeLevel(seed); }
+  brushPt = { x: 500, y: 520, on: false, seen: false }; lastSprayBeat = -99; rinseY = -1e9;
+  if (dirtC.width) buildDirt();
   fx = { ripples: [], parts: [], texts: [], ghosts: [], trails: [] };
   stats = { perfect: 0, splits: 0, merges: 0, bonus: 0, combo: 0, maxCombo: 0, lastPB: -99, fever: false };
   flash = { gold: 0, red: 0 };
@@ -467,7 +576,8 @@ function endGame(early) {
   if (state !== 'play') return;
   Core.release(W); grabbedBy = null;
   if (stats.fever) { stats.fever = false; Sound.setFever(false); }
-  finalScore = score(); stats.share = Core.share(W);   // 收工當下就記下來，之後水珠會滑落
+  if (F) { Foam.lift(F); brushPt.on = false; }
+  finalScore = score(); stats.share = mode === 'foam' ? finalScore : Core.share(W);   // 收工當下就記下來，之後水珠會滑落
   state = 'outro'; outroAt = performance.now() / 1000;
   if (early) Sound.play('game', onSongEnd, 0.03, 11 * 16);   // 直接跳到收尾和弦
   // 水珠往車頭滑落：大顆先走，越大越快
@@ -478,12 +588,12 @@ function endGame(early) {
 
 function saveBest() {
   try {
-    const best = +localStorage.getItem('hjaec-beads-best') || 0;
-    if (finalScore > best) localStorage.setItem('hjaec-beads-best', String(finalScore));
+    const best = +localStorage.getItem(MODE[mode].key) || 0;
+    if (finalScore > best) localStorage.setItem(MODE[mode].key, String(finalScore));
     stats.best = Math.max(best, finalScore); stats.newBest = finalScore > best;
   } catch (e) { stats.best = finalScore; }
 }
-function loadBest() { try { return +localStorage.getItem('hjaec-beads-best') || 0; } catch (e) { return 0; } }
+function loadBest() { try { return +localStorage.getItem(MODE[mode].key) || 0; } catch (e) { return 0; } }
 
 const TITLES = {
   S: ['一顆到底', '鍍膜師傅看了都點頭。'],
@@ -492,17 +602,27 @@ const TITLES = {
   C: ['水珠各自散步中', '大顆的要拖慢一點。'],
   F: ['引擎蓋還在下雨', '按住一顆，慢慢靠向另一顆。'],
 };
+const TITLES_FOAM = {
+  S: ['泡泡大滿貫', '整台都是綿密泡沫，髒污無處可躲。'],
+  A: ['泡得漂亮', '只剩一點點縫，下次抹勻一點。'],
+  B: ['還有幾塊沒泡到', '踩拍噴，泡沫會更多。'],
+  C: ['泡沫不太夠', '別抹太快，泡沫會破。'],
+  F: ['只泡到一角', '踩著拍子按下去噴泡沫，再慢慢抹開。'],
+};
 function showResult() {
   resultShown = true; state = 'result';
-  const g = Core.grade(finalScore), [t1, t2] = TITLES[g];
+  const g = gradeOf(finalScore), [t1, t2] = (mode === 'foam' ? TITLES_FOAM : TITLES)[g];
   $('#final').textContent = g;
   $('#result-title').textContent = t1;
   $('#result-sub').textContent = t2;
   $('#ticket-no').textContent = `No. ${String(runSeed).padStart(5, '0')}　${new Date().toLocaleDateString('zh-TW')}`;
-  const rows = [['最大水珠佔', `${Math.round(stats.share * 100)}%`], ['踩拍合併', `${stats.perfect} 次`], ['最高連擊', `${stats.maxCombo} 連`],
-    ['斷開', `${stats.splits} 次`], ['總分', `${Math.round(finalScore * 100)}`]];
+  const rows = mode === 'foam'
+    ? [['泡沫覆蓋率', `${Math.round(stats.share * 100)}%`], ['踩拍噴泡', `${stats.perfect} 次`], ['最高連擊', `${stats.maxCombo} 連`], ['破洞', `${stats.splits} 次`], ['總分', `${Math.round(finalScore * 100)}`]]
+    : [['最大水珠佔', `${Math.round(stats.share * 100)}%`], ['踩拍合併', `${stats.perfect} 次`], ['最高連擊', `${stats.maxCombo} 連`], ['斷開', `${stats.splits} 次`], ['總分', `${Math.round(finalScore * 100)}`]];
+  $('#stamp span').textContent = mode === 'foam' ? '泡沫檢驗' : '撥水檢驗';
+  $('.product img').src = MODE[mode].product[0]; $('.product b').textContent = MODE[mode].product[1];
   $('#rows').innerHTML = rows.map(([k, v]) => `<li>${k}<b>${v}</b></li>`).join('');
-  $('#record').textContent = stats.newBest ? '★ 新紀錄' : `最佳紀錄 ${Core.grade(stats.best)} · ${Math.round(stats.best * 100)} 分`;
+  $('#record').textContent = stats.newBest ? '★ 新紀錄' : `最佳紀錄 ${gradeOf(stats.best)} · ${Math.round(stats.best * 100)} 分`;
   screen('result');
   // 檢驗章晚一點蓋下去
   const st = $('#stamp'); st.classList.remove('hit'); st.style.opacity = 0;
@@ -510,11 +630,24 @@ function showResult() {
 }
 
 function goHome() {
-  state = 'intro'; newLevel(7); demo = { wait: 1.2, target: null, px: 500, py: 520, on: true, reset: 0 };
+  state = 'intro'; newLevel(7); demo = { wait: 1.2, target: null, px: 500, py: 520, on: true, reset: 0, foamOn: false, ang: 0, t: 0 };
   screen('intro'); updateBest();
   if (Sound.ready) Sound.play('title');
 }
-function updateBest() { const b = loadBest(); $('#best').textContent = b ? `最佳 ${Core.grade(b)} · ${Math.round(b * 100)} 分` : ''; }
+function updateBest() {
+  const b = loadBest();
+  $('#best').textContent = (b ? `最佳 ${gradeOf(b)} · ${Math.round(b * 100)} 分　` : '') + '點這裡換模式 ⇄';
+  $('.title-plate .name').textContent = MODE[mode].name;
+  $('#gauge-label').textContent = MODE[mode].gauge;
+  document.body.dataset.mode = mode;
+}
+// 標題畫面點中間的牌子：切換水珠／泡沫
+function switchMode() {
+  if (state !== 'intro') return;
+  mode = mode === 'foam' ? 'drops' : 'foam';
+  history.replaceState(null, '', mode === 'foam' ? '#foam' : location.pathname + location.search);
+  goHome(); Sound.sfx.stamp();
+}
 
 // ---------- 事件處理 ----------
 function onEvents(ev, B) {
@@ -569,9 +702,71 @@ function comboTick(B) {
 
 function hint(text, cls = '', dur = 1.2) { hintMsg = { text, cls, until: performance.now() / 1000 + dur }; }
 
+// 泡沫版：按下去噴一坨（看踩拍準不準決定量），一拍只能噴一次
+function foamPress(x, y, B) {
+  brushPt = { x, y, on: true, seen: true };
+  Foam.lift(F); Foam.brush(F, x, y, 0);
+  const bi = Math.round(B.p / Sound.SPB);
+  if (bi === lastSprayBeat) return;
+  lastSprayBeat = bi;
+  const off = Math.abs(B.p - bi * Sound.SPB);
+  const q = off < 0.08 ? 'perfect' : off < 0.17 ? 'good' : 'miss';
+  if (q === 'perfect') {
+    stats.combo = bi - stats.lastPB <= 4 ? stats.combo + 1 : 1; stats.lastPB = bi;
+    stats.maxCombo = Math.max(stats.maxCombo, stats.combo); stats.perfect++;
+    flash.gold = 1;
+    fx.texts = fx.texts.filter(t => !t.combo);
+    floatText(stats.combo > 1 ? `${stats.combo} 連踩拍！` : '踩拍！', x, y - 110, stats.fever ? '#ffc93c' : '#ffe2a0', 30).combo = true;
+    sparkles(x, y, 5, 200);
+    Sound.sfx.perfect(stats.combo);
+    if (!stats.fever && stats.combo >= 4) { stats.fever = true; Sound.setFever(true); Sound.sfx.fever(); sparkles(x, y, 14, 420); hint('FEVER！泡沫加量', 'fever', 2.2); }
+  } else {
+    if (stats.combo >= 2) hint(stats.fever ? '沒踩到拍，FEVER 結束' : '沒踩到拍', 'warn', 0.9);
+    breakCombo();
+    floatText(q === 'good' ? '差一點' : '沒踩到', x, y - 100, q === 'good' ? '#fff' : '#ff9a9e', 20);
+  }
+  Foam.spray(F, x, y, Foam.CFG[q] * (stats.fever ? Foam.CFG.fever : 1));
+  ripple(x, y, 20, 90, 'rgba(255,255,255,A)', 0.45, 0.8);
+  puff(x, y, q === 'perfect' ? 16 : 9);
+  Sound.sfx.spray(q);
+}
+function foamRelease() { brushPt.on = false; if (F) Foam.lift(F); }
+function puff(x, y, n) {
+  for (let i = 0; i < n; i++) { const a = Math.random() * TAU, v = 80 + Math.random() * 260;
+    fx.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, size: 6 + Math.random() * 9, t: 0, life: 0.4 + Math.random() * 0.3, kind: 'puff' }); }
+}
+function foamTick(dt) {
+  if (!brushPt.on || !F) return;
+  if (Foam.brush(F, brushPt.x, brushPt.y, dt) === 'tear') {
+    stats.splits++; flash.red = 1; Sound.sfx.split();
+    hint(stats.fever ? '泡沫破了！FEVER 結束' : '泡沫破洞了，抹慢一點', 'warn', 1.4);
+    breakCombo();
+    floatText('破洞！', brushPt.x, brushPt.y - 100, '#ff6b70', 24);
+    spray(brushPt.x, brushPt.y, 16, 380, 4);
+  }
+}
+function foamOutroTick(t) {
+  const el = t - outroAt;
+  const ny = -60 + el * 760;                          // 水幕往下掃
+  if (F && ny > rinseY) {
+    const c = dirtC.getContext('2d'); setL(c); c.globalCompositeOperation = 'destination-out';
+    const C = Foam.CELL;
+    for (let j = 0; j < Foam.GH; j++) {
+      const y = (j + 0.5) * C; if (y <= rinseY || y > ny) continue;
+      for (let i = 0; i < Foam.GW; i++) {
+        const k = j * Foam.GW + i;
+        if (F.inside[k] && F.f[k] >= Foam.CFG.cover) { c.beginPath(); c.arc((i + 0.5) * C, y, C * 0.95, 0, TAU); c.fill(); if (Math.random() < 0.04) sparkles((i + 0.5) * C, y, 1, 40); }
+      }
+    }
+    c.globalCompositeOperation = 'source-over';
+    rinseY = ny;
+  }
+  if (!resultShown && el > 2.3) showResult();
+}
+
 // 下雨：配樂裡的高音水滴聲響時，新的小水珠落下
 function rain(B) {
-  if (B.name !== 'game') return;
+  if (B.name !== 'game' || mode === 'foam') return;
   const st = B.st;
   if (st <= lastStep) return;
   for (let s = lastStep + 1; s <= st; s++) {
@@ -590,6 +785,20 @@ function rain(B) {
 // ---------- 標題畫面的示範 ----------
 function demoTick(dt) {
   if (!demo.on) return;
+  if (mode === 'foam') {   // 示範：噴一下、繞圈抹開
+    demo.t += dt; demo.reset += dt;
+    if (demo.reset > 18 || Foam.coverage(F) > 0.8) { newLevel(7 + Math.floor(Math.random() * 50)); demo.reset = 0; demo.t = 0; }
+    if (demo.t > 1.6 || !demo.foamOn) {
+      const tg = Foam.emptiest(F, Math.random); demo.cx = tg.x; demo.cy = tg.y; demo.ang = Math.random() * TAU; demo.rad = 10; demo.t = 0;
+      Foam.lift(F); Foam.spray(F, demo.cx, demo.cy, Foam.CFG.perfect); demo.foamOn = true;
+      demo.px = demo.cx; demo.py = demo.cy; Foam.brush(F, demo.px, demo.py, 0);
+      ripple(demo.cx, demo.cy, 20, 80, 'rgba(255,255,255,A)', 0.45, 0.6); puff(demo.cx, demo.cy, 8);
+    }
+    demo.ang += 500 * dt / Math.max(demo.rad, 30); demo.rad = Math.min(120, demo.rad + 70 * dt);
+    demo.px = demo.cx + Math.cos(demo.ang) * demo.rad; demo.py = demo.cy + Math.sin(demo.ang) * demo.rad;
+    Foam.brush(F, demo.px, demo.py, dt);
+    return;
+  }
   demo.reset += dt;
   if (demo.reset > 16 || W.drops.length < 4) { newLevel(7 + Math.floor(Math.random() * 50)); demo.reset = 0; demo.wait = 1; }
   if (!W.held) {
@@ -621,15 +830,16 @@ function run(t) {
   if (!paused) {
     if (state === 'intro') { demoTick(dt); onEvents(Core.step(W, dt), B); }
     else if (state === 'count') {
-      if (B.p >= Sound.GAME_START - 0.01) { state = 'play'; hint('按住水珠，慢慢拖向另一顆', '', 3); }
+      if (B.p >= Sound.GAME_START - 0.01) { state = 'play'; hint(mode === 'foam' ? '踩著拍子按下去噴泡沫，再慢慢抹開' : '按住水珠，慢慢拖向另一顆', '', 3); }
       Core.step(W, dt);
     } else if (state === 'play') {
       keyTick(dt);
+      if (mode === 'foam') foamTick(dt);
       onEvents(Core.step(W, dt), B);
       comboTick(B);
       rain(B);
       if (timeLeft() <= 0) endGame(false);
-    } else if (state === 'outro' || state === 'result') outroTick(dt, t);
+    } else if (state === 'outro' || state === 'result') { if (mode === 'foam') foamOutroTick(t); else outroTick(dt, t); }
     updateFx(dt);
   }
   drawScene(B, t);
@@ -678,14 +888,14 @@ function hud(B, t) {
   UI.time.classList.toggle('hurry', state === 'play' && left < 4);
   UI.root.style.setProperty('--beat', B.bar >= 0 ? B.env.toFixed(3) : 0);
   // 撥水率錶：指針有點慣性
-  const sc = state === 'intro' ? Core.share(W) : state === 'play' || state === 'count' ? score() : finalScore;
+  const sc = state === 'intro' ? (mode === 'foam' ? score() : Core.share(W)) : state === 'play' || state === 'count' ? score() : finalScore;
   gaugeV += (sc - gaugeV) * 0.12;
   UI.needle.style.transform = `rotate(${-120 + 240 * gaugeV + (live ? B.env * 1.5 : 0)}deg)`;
   UI.pct.textContent = Math.round(sc * 100);
-  UI.grade.textContent = Core.grade(sc);
+  UI.grade.textContent = gradeOf(sc);
   UI.combo.textContent = stats.combo;
   const big = Core.biggest(W.drops);
-  UI.pieces.textContent = `${W.drops.length} 顆 · 最大 ${big ? (big.r * 2 * HOOD.cm).toFixed(1) : 0}cm`;
+  UI.pieces.textContent = mode === 'foam' ? `泡沫 ${F ? Math.round(Foam.total(F)) : 0} · 破洞 ${stats.splits}` : `${W.drops.length} 顆 · 最大 ${big ? (big.r * 2 * HOOD.cm).toFixed(1) : 0}cm`;
   // 換檔燈當節拍燈：從兩邊往中間亮，全亮＝拍點
   const on = B.bar >= 0;
   const k = on ? Math.ceil(B.f * 6) : 0, flashOn = on && B.f < 0.14;
@@ -696,14 +906,17 @@ function hud(B, t) {
   UI.shift.classList.toggle('hurry', state === 'play' && left < 4);
   const h = UI.hint;
   let text, cls = '';
-  if (state === 'intro') { text = Sound.ready ? '按右下「開始」發動，把水珠聚成一顆' : '點一下畫面開音樂'; }
+  const foam = mode === 'foam';
+  if (state === 'intro') { text = !Sound.ready ? '點一下畫面開音樂' : foam ? '按「開始」：踩拍噴泡沫，把引擎蓋鋪滿' : '按右下「開始」發動，把水珠聚成一顆'; }
   else if (state === 'outro' || state === 'result') { text = '收工！看看工單'; cls = 'good'; }
   else if (state === 'count') { const n = Math.max(0, Math.floor(B.p / Sound.SPB)); text = B.p < 0 ? '準備' : ['3', '2', '1', '開始！'][Math.min(3, n)]; cls = 'count'; }
   else if (hintMsg && t < hintMsg.until) { text = hintMsg.text; cls = hintMsg.cls; }
   else if (W.held && W.held.stress > 0.35) { text = '太快了！快斷了'; cls = 'warn'; }
+  else if (foam && brushPt.on && F && F.stress > 0.35) { text = '太快了！泡沫要破了'; cls = 'warn'; }
   else if (stats.fever) { text = `FEVER  ${stats.combo} 連`; cls = 'fever'; }
   else if (stats.combo >= 2) { text = `踩拍 ${stats.combo} 連・4 連進 FEVER`; cls = 'good'; }
   else if (left < 4) { text = `最後 ${Math.ceil(left)} 秒！`; cls = 'warn'; }
+  else if (foam) text = brushPt.on ? '慢慢抹開，薄的地方不算數' : left > 14 ? '換檔燈全亮時按下去＝踩拍噴泡沫' : '哪裡還是髒的，就去哪裡噴';
   else text = W.held ? '外圈縮到水珠邊緣時撞上去＝踩拍' : left > 14 ? '按住水珠，慢慢拖向另一顆' : '邊框閃的瞬間合併，加分';
   if (h.textContent !== text) h.textContent = text;
   if (h.className !== cls) h.className = cls;
@@ -717,6 +930,7 @@ cv.addEventListener('pointerdown', e => {
   if (state === 'intro') { if (Sound.songName() !== 'title') Sound.play('title'); return; }
   if (state !== 'play' || paused || activePointer != null) return;
   const [x, y] = toL(e.clientX, e.clientY);
+  if (mode === 'foam') { activePointer = e.pointerId; cv.setPointerCapture(e.pointerId); kb.on = false; foamPress(x, y, beat()); return; }
   const pad = Math.max(14, 22 / V.s);
   const d = Core.hit(W, x, y, pad);
   if (!d) return;
@@ -725,13 +939,16 @@ cv.addEventListener('pointerdown', e => {
   Sound.sfx.grab();
 });
 cv.addEventListener('pointermove', e => {
-  if (e.pointerId !== activePointer || grabbedBy !== 'pointer') return;
+  if (e.pointerId !== activePointer) return;
   const [x, y] = toL(e.clientX, e.clientY);
+  if (mode === 'foam') { brushPt.x = x; brushPt.y = y; return; }
+  if (grabbedBy !== 'pointer') return;
   Core.pointer(W, x, y);
 });
 const up = e => {
   if (e.pointerId !== activePointer) return;
   activePointer = null;
+  if (mode === 'foam') foamRelease();
   if (grabbedBy === 'pointer') { Core.release(W); grabbedBy = null; }
 };
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('lostpointercapture', up);
@@ -745,12 +962,14 @@ function keyTick(dt) {
   const L = Math.hypot(dx, dy);
   kb.x = clamp(kb.x + dx / L * sp * dt, 20, 980); kb.y = clamp(kb.y + dy / L * sp * dt, 20, 1080);
   if (grabbedBy === 'key') Core.pointer(W, kb.x, kb.y);
+  if (mode === 'foam' && kb.down) { brushPt.x = kb.x; brushPt.y = kb.y; }
 }
 addEventListener('keydown', e => {
   if (e.key.startsWith('Arrow')) { kb.keys[e.key] = true; e.preventDefault(); }
   else if (e.key === ' ' || e.key === 'Enter') {
     if (!$('#boot').hidden && !$('#boot').classList.contains('gone')) { ignite(); e.preventDefault(); return; }
     if (state === 'intro' && !(e.target.closest && e.target.closest('button,a'))) { startGame(); e.preventDefault(); return; }
+    if (state === 'play' && !paused && mode === 'foam') { e.preventDefault(); kb.on = true; if (!kb.down) { kb.down = true; foamPress(kb.x, kb.y, beat()); } return; }
     if (state === 'play' && !paused) {
       e.preventDefault(); kb.on = true;
       if (grabbedBy === 'key') { Core.release(W); grabbedBy = null; }
@@ -758,7 +977,10 @@ addEventListener('keydown', e => {
     }
   } else if (e.key === 'Escape') { if (state === 'play' || state === 'count') togglePause(); else closeModals(); }
 });
-addEventListener('keyup', e => { if (e.key.startsWith('Arrow')) kb.keys[e.key] = false; });
+addEventListener('keyup', e => {
+  if (e.key.startsWith('Arrow')) kb.keys[e.key] = false;
+  if ((e.key === ' ' || e.key === 'Enter') && kb.down) { kb.down = false; foamRelease(); }
+});
 
 // ---------- 按鈕 ----------
 function togglePause(force) {
@@ -766,7 +988,7 @@ function togglePause(force) {
   if (p === paused) return;
   paused = p;
   $('#pause').setAttribute('aria-pressed', p);
-  if (p) { Core.release(W); grabbedBy = null; activePointer = null; Sound.pause(); $('#modal-title').textContent = '暫停中'; $('#resume').textContent = '繼續'; show('#modal', true); }
+  if (p) { Core.release(W); grabbedBy = null; activePointer = null; if (F) foamRelease(); Sound.pause(); $('#modal-title').textContent = '暫停中'; $('#resume').textContent = '繼續'; show('#modal', true); }
   else { Sound.resume(); show('#modal', false); $('#help').setAttribute('aria-pressed', 'false'); }
 }
 function closeModals() {
@@ -785,6 +1007,7 @@ $('#help').onclick = () => {
   $('#modal-title').textContent = '玩法說明'; $('#resume').textContent = '知道了'; show('#modal', true);
 };
 $('#resume').onclick = () => closeModals();
+$('.plate.center').addEventListener('click', () => switchMode());
 $('#pause').onclick = () => { if (state === 'play' || state === 'count') togglePause(); };
 // 開機封面：點一下才發動（瀏覽器規定要點過才能出聲）
 function ignite() {
@@ -832,14 +1055,14 @@ function shareImage() {
   drawMark(g, 110, 120, 84);
   g.fillStyle = '#f3f1ec'; g.font = '700 40px "PingFang TC", sans-serif'; g.textBaseline = 'middle';
   g.fillText('紅分子 HJAEC', 176, 100);
-  g.fillStyle = '#94918b'; g.font = '500 28px "PingFang TC", sans-serif'; g.fillText('水珠聚一顆 · 鍍膜撥水小遊戲', 176, 146);
-  const gd = Core.grade(finalScore);
+  g.fillStyle = '#94918b'; g.font = '500 28px "PingFang TC", sans-serif'; g.fillText(`${MODE[mode].name} · 洗車節奏小遊戲`, 176, 146);
+  const gd = gradeOf(finalScore);
   g.textAlign = 'center'; g.fillStyle = '#fff'; g.shadowColor = 'rgba(217,20,28,.8)'; g.shadowBlur = 50;
   g.font = '800 380px "Barlow Condensed", "Avenir Next Condensed", sans-serif'; g.fillText(gd, w / 2, 700);
   g.shadowBlur = 0;
-  g.font = '800 64px "PingFang TC", sans-serif'; g.fillText(TITLES[gd][0], w / 2, 1000);
+  g.font = '800 64px "PingFang TC", sans-serif'; g.fillText((mode === 'foam' ? TITLES_FOAM : TITLES)[gd][0], w / 2, 1000);
   g.fillStyle = '#cfccc6'; g.font = '500 36px "PingFang TC", sans-serif';
-  g.fillText(`最大水珠佔 ${Math.round(stats.share * 100)}%　踩拍合併 ${stats.perfect} 次`, w / 2, 1080);
+  g.fillText(mode === 'foam' ? `泡沫覆蓋 ${Math.round(stats.share * 100)}%　踩拍噴泡 ${stats.perfect} 次` : `最大水珠佔 ${Math.round(stats.share * 100)}%　踩拍合併 ${stats.perfect} 次`, w / 2, 1080);
   g.fillStyle = '#d9141c'; g.font = '700 34px "PingFang TC", sans-serif'; g.fillText('hjaec.com', w / 2, 1250);
   const url = c.toDataURL('image/jpeg', 0.9);
   $('#share-image').src = url; $('#download').href = url;
@@ -849,7 +1072,7 @@ function shareImage() {
 // ---------- 開始 ----------
 addEventListener('resize', resize);
 if (document.fonts) document.fonts.ready.then(resize);
-resize(); updateBest();
+resize(); newLevel(7); updateBest();
 requestAnimationFrame(frame);
-window.__game = { get W() { return W; }, get state() { return state; }, get stats() { return stats; }, startGame, endGame, V, run };   // 測試用
+window.__game = { get W() { return W; }, get F() { return F; }, get mode() { return mode; }, get state() { return state; }, get stats() { return stats; }, startGame, endGame, switchMode, V, run };   // 測試用
 })();

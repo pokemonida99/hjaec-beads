@@ -269,3 +269,8 @@ button, a.btn { font: inherit; color: inherit; cursor: pointer; }
   .engine { width: 70px; height: 70px; }
   .engine span { font-size: 15px; }
 }
+
+/* 兩種玩法的說明文字 */
+body[data-mode="foam"] .only-drops, body:not([data-mode="foam"]) .only-foam { display: none; }
+#game.intro .plate.center { cursor: pointer; }
+#game.intro .plate.center:active { filter: brightness(1.3); }

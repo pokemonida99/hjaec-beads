@@ -291,6 +291,15 @@ const sfx = {
     I.crash(t, 0.8);
     [72, 76, 79, 84, 88].forEach((m, i) => I.bell(t + i * 0.05, m, 0.7));
   },
+  // 噴泡沫：一陣往上掃的嘶聲＋踩拍時的和弦水滴
+  spray(q) {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime + 0.005, len = q === 'perfect' ? 0.32 : 0.22;
+    const g = gain(sfxBus, 0); env(g, t, 0.01, q === 'perfect' ? 0.42 : 0.28, len);
+    const f = filt(g, 'bandpass', 1800, 0.8); f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(5200, t + len);
+    noise(t, len + 0.05, f);
+    if (q !== 'miss') { const ch = chordAt(pos()); [0, 1, 2].forEach(i => I.bloop(t + i * 0.035, ch.tones[i] + 24, 0.5, sfxBus)); }
+  },
   stamp() { if (!ctx || muted) return; const t = ctx.currentTime + 0.005; I.kick(t, 0.9); I.clap(t + 0.01, 0.5); },
   grab() { if (ctx && !muted) I.bloop(ctx.currentTime + 0.005, 84, 0.25, sfxBus); },
   tap() { if (ctx && !muted) I.stick(ctx.currentTime + 0.005, true); },
