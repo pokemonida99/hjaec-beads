@@ -25,6 +25,7 @@ for (let b = 2; b <= 9; b++) { RAIN.add(b * 16 + 14); if (b >= 5) RAIN.add(b * 1
 
 let ctx = null, master, musicBus, sfxBus, noiseBuf, verb;
 let muted = false;
+let fever = false;   // FEVER 時配樂多一層
 let song = null, timer = null;
 
 // 時鐘：聲音能播時跟 AudioContext 走（最準），播不了時改用系統時間；兩者切換時保持連續
@@ -151,6 +152,12 @@ const I = {
     osc('sine', mtof(m), t, 0.7, g); osc('sine', mtof(m) * 2.76, t, 0.4, gain(g, 0.3));
     const r = gain(verb, 0); env(r, t, 0.002, 0.2 * v, 0.5); osc('sine', mtof(m), t, 0.6, r);
   },
+  lead(t, m, v = 1, len = 0.11) {
+    const g = gain(musicBus, 0); env(g, t, 0.003, 0.1 * v, len);
+    const f = filt(g, 'lowpass', 3800, 3);
+    osc('square', mtof(m), t, len, f); osc('sawtooth', mtof(m) * 1.007, t, len, gain(f, 0.6));
+    const r = gain(verb, 0); env(r, t, 0.003, 0.05 * v, len); osc('square', mtof(m), t, len, r);
+  },
   riser(t, len, v = 1) {
     const g = gain(musicBus, 0);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22 * v, t + len);
@@ -201,6 +208,12 @@ const SONGS = {
       if (bar === 9 && st % 2 === 0 && st >= 8) I.snare(t, 0.3 + st / 40);
       if (bar === 10) { I.snare(t, 0.25 + st / 22); if (st === 0) I.riser(t, BAR - 0.02, 1.1); }
       if (RAIN.has(step)) I.bloop(t, 88 + (step % 3) * 2, 0.5);
+      if (fever) {   // FEVER：16 分音符主旋律＋多一下拍手＋開放鈸
+        const tn = ch.tones, seq = [0, 1, 2, 3, 2, 1, 3, 2];
+        if (st % 2 === 0) I.lead(t, tn[seq[(st / 2 + bar) % 8]] + 24, st % 4 === 0 ? 1 : 0.7);
+        if (st === 14) I.clap(t, 0.7);
+        if (st % 4 === 2) I.hat(t, 0.9, true);
+      }
       return;
     }
     if (bar === 11) {   // 收尾大和弦，水珠滑下車頭
@@ -272,10 +285,18 @@ const sfx = {
     noise(t, 0.2, filt(g, 'bandpass', 3200, 1.5));
     [0, 0.05, 0.1].forEach((o, i) => I.bloop(t + o, 79 - i * 5, 0.6, sfxBus));
   },
+  fever() {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime + 0.005;
+    I.crash(t, 0.8);
+    [72, 76, 79, 84, 88].forEach((m, i) => I.bell(t + i * 0.05, m, 0.7));
+  },
   grab() { if (ctx && !muted) I.bloop(ctx.currentTime + 0.005, 84, 0.25, sfxBus); },
   tap() { if (ctx && !muted) I.stick(ctx.currentTime + 0.005, true); },
 };
 
-return { init, setMuted, get muted() { return muted; }, pause, resume, play, stop, pos, songName, sfx,
+function setFever(on) { fever = !!on; }
+
+return { init, setMuted, setFever, get muted() { return muted; }, pause, resume, play, stop, pos, songName, sfx,
   BPM, SPB, STEP, BAR, GAME_START, GAME_LEN, RAIN, get ready() { return !!ctx; } };
 })();

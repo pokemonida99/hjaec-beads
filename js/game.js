@@ -19,7 +19,8 @@ let state = 'intro';           // intro | count | play | outro | result
 let paused = false;
 let runSeed = 1;
 let fx = { ripples: [], parts: [], texts: [], ghosts: [], trails: [] };
-let stats = { perfect: 0, splits: 0, merges: 0, bonus: 0 };
+let stats = { perfect: 0, splits: 0, merges: 0, bonus: 0, combo: 0, maxCombo: 0, lastPB: -99, fever: false };
+let flash = { gold: 0, red: 0 };   // 踩拍金光、斷開紅光
 let lastStep = -1, outroAt = 0, resultShown = false, finalScore = 0;
 let hintMsg = null;        // {text, cls, until}
 let kb = { x: 500, y: 520, on: false, keys: {} };
@@ -195,10 +196,10 @@ function drawScene(B, t) {
     uctx.beginPath(); uctx.moveTo(-100, y - 2); uctx.quadraticCurveTo(500, y - 32, 1100, y - 2); uctx.lineTo(1100, y + 2); uctx.quadraticCurveTo(500, y - 28, -100, y + 2); uctx.fill();
   }
   // 每小節第一拍：一道光斜掃過引擎蓋
-  if (B.bar >= 0 && B.inBar === 0) {
+  if (B.bar >= 0 && (B.inBar === 0 || (stats.fever && state === 'play'))) {
     const x = lerp(-450, 1450, B.f);
     const gr = uctx.createLinearGradient(x - 180, 0, x + 180, 0);
-    const a = (play ? 0.2 : 0.11) * Math.sin(B.f * Math.PI);
+    const a = (play ? (stats.fever ? 0.3 : 0.2) : 0.11) * Math.sin(B.f * Math.PI);
     gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, `rgba(255,245,240,${a})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
     uctx.fillStyle = gr; uctx.save(); uctx.transform(1, 0, -0.35, 1, 0, 0); uctx.fillRect(x - 600, -100, 1200, 1400); uctx.restore();
   }
@@ -236,7 +237,8 @@ function drawScene(B, t) {
   for (const side of [0, 1]) {
     const w = Math.min(90, VW * 0.12) * DPR, x = side ? cv.width - w : 0;
     const gr = ctx.createLinearGradient(side ? cv.width : 0, 0, x + (side ? 0 : w), 0);
-    gr.addColorStop(0, `rgba(230,20,30,${neon})`); gr.addColorStop(1, 'rgba(230,20,30,0)');
+    const nc = stats.fever && state === 'play' ? (B.b % 2 ? '255,190,40' : '255,60,30') : '230,20,30';
+    gr.addColorStop(0, `rgba(${nc},${stats.fever && state === 'play' ? 0.3 + B.env * 0.5 : neon})`); gr.addColorStop(1, `rgba(${nc},0)`);
     ctx.fillStyle = gr; ctx.fillRect(x, 0, w, cv.height);
   }
 
@@ -283,6 +285,19 @@ function drawScene(B, t) {
     ctx.setLineDash([4, 5]); ctx.lineDashOffset = -t * 30;
     ctx.beginPath(); ctx.arc(X, Y, R + st * 3 * Math.sin(t * 40), 0, TAU); ctx.stroke(); ctx.setLineDash([]);
   }
+  // 對拍縮圈：拖著水珠時，外圈在下一拍剛好縮到水珠邊緣
+  if (h && state === 'play') {
+    const X = V.ox + h.x * V.s, Y = V.oy + h.y * V.s, R = h.r * V.s * dropScale(h) + 5;
+    const col = stats.fever ? '255,201,60' : '255,255,255';
+    const ar = R + 64 * (1 - B.f);
+    ctx.strokeStyle = `rgba(${col},${0.12 + 0.75 * B.f * B.f})`; ctx.lineWidth = 2 + 2 * B.f;
+    ctx.beginPath(); ctx.arc(X, Y, ar, 0, TAU); ctx.stroke();
+    if (B.f < 0.18) {
+      const q = B.f / 0.18;
+      ctx.strokeStyle = `rgba(${col},${0.9 * (1 - q)})`; ctx.lineWidth = 5 * (1 - q) + 1;
+      ctx.beginPath(); ctx.arc(X, Y, R + q * 16, 0, TAU); ctx.stroke();
+    }
+  }
   // 示範模式與鍵盤的游標
   const cur = state === 'intro' && demo.on && W.held ? { x: demo.px, y: demo.py, on: !!W.held } : kb.on && state === 'play' ? { x: kb.x, y: kb.y, on: grabbedBy === 'key' } : null;
   if (cur) {
@@ -291,15 +306,50 @@ function drawScene(B, t) {
     ctx.beginPath(); ctx.arc(X, Y, cur.on ? 9 : 13, 0, TAU); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(X, Y, 3, 0, TAU); ctx.fill();
   }
+  drawBeatFrame(B);
   for (const tx of fx.texts) {
     const q = tx.t / tx.life, X = V.ox + tx.x * V.s, Y = V.oy + tx.y * V.s - q * 34;
+    const pop = q < 0.12 ? 1.7 - q / 0.12 * 0.7 : 1;
+    ctx.save(); ctx.translate(X, Y); ctx.scale(pop, pop); ctx.translate(-X, -Y);
     ctx.globalAlpha = q < 0.15 ? q / 0.15 : 1 - Math.max(0, (q - 0.6) / 0.4);
     ctx.font = `800 ${tx.size}px ${getComputedStyle(document.documentElement).getPropertyValue('--num')}, "PingFang TC", sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(60,0,4,.85)'; ctx.strokeText(tx.text, X, Y);
     ctx.fillStyle = tx.color; ctx.fillText(tx.text, X, Y);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 1; ctx.restore();
   }
+}
+
+// 整個畫面的邊框跟著拍子閃（Patapon 那種），第一拍最亮
+function drawBeatFrame(B) {
+  const live = state === 'play' || state === 'count';
+  const W2 = VW, H2 = VH;
+  let a = B.bar >= 0 ? B.env : 0;
+  if (state === 'outro' || state === 'result') a *= 0.25;
+  const strength = live ? (B.inBar === 0 ? 1 : 0.7) : 0.28;
+  let col = '255,255,255';
+  if (live && state === 'play' && timeLeft() < 4) col = '255,55,60';
+  if (stats.fever && state === 'play') col = B.b % 2 ? '255,201,60' : '255,90,40';
+  const edge = (c, k, len) => {
+    const g = [[0, 0, 0, len, 0, 0, W2, len], [0, H2, 0, H2 - len, 0, H2 - len, W2, len], [0, 0, len, 0, 0, 0, len, H2], [W2, 0, W2 - len, 0, W2 - len, 0, len, H2]];
+    for (const [x0, y0, x1, y1, rx, ry, rw, rh] of g) {
+      const gr = ctx.createLinearGradient(x0, y0, x1, y1);
+      gr.addColorStop(0, `rgba(${c},${k})`); gr.addColorStop(1, `rgba(${c},0)`);
+      ctx.fillStyle = gr; ctx.fillRect(rx, ry, rw, rh);
+    }
+  };
+  const k = a * strength;
+  if (k > 0.01) {
+    edge(col, 0.55 * k, 26 + 70 * k);
+    const bw = 3 + 9 * k;
+    ctx.fillStyle = `rgba(${col},${0.9 * k})`;
+    ctx.fillRect(0, 0, W2, bw); ctx.fillRect(0, H2 - bw, W2, bw); ctx.fillRect(0, 0, bw, H2); ctx.fillRect(W2 - bw, 0, bw, H2);
+  }
+  if (flash.gold > 0) {
+    ctx.fillStyle = `rgba(255,214,120,${0.1 * flash.gold})`; ctx.fillRect(0, 0, W2, H2);
+    edge('255,214,120', 0.8 * flash.gold, 120 * flash.gold + 20);
+  }
+  if (flash.red > 0) edge('255,40,50', 0.7 * flash.red, 110 * flash.red + 20);
 }
 
 function dropScale(d) {
@@ -362,7 +412,7 @@ function star(c, x, y, r, a = 1, rot = 0, scale) {
 
 // ---------- 特效 ----------
 function ripple(x, y, r0, grow, color = 'rgba(255,255,255,A)', life = 0.45, a = 0.7) { fx.ripples.push({ x, y, r0, grow, color, life, a, t: 0 }); }
-function floatText(text, x, y, color = '#fff', size = 20) { fx.texts.push({ text, x, y, color, size, t: 0, life: 0.9 }); }
+function floatText(text, x, y, color = '#fff', size = 20) { const o = { text, x, y, color, size, t: 0, life: 0.9 }; fx.texts.push(o); return o; }
 function spray(x, y, n, spd, size = 4) {
   for (let i = 0; i < n; i++) { const a = Math.random() * TAU, v = spd * (0.4 + Math.random() * 0.8);
     fx.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, size: size * (0.5 + Math.random()), t: 0, life: 0.35 + Math.random() * 0.3 }); }
@@ -376,6 +426,7 @@ function updateFx(dt) {
   for (const p of fx.parts) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.9; p.vy *= 0.9; }
   fx.parts = fx.parts.filter(p => p.t < p.life);
   for (const tr of fx.trails) tr.a = Math.max(0, tr.a - dt * 0.25);
+  flash.gold = Math.max(0, flash.gold - dt * 3); flash.red = Math.max(0, flash.red - dt * 2.5);
   fx.trails = fx.trails.filter(tr => tr.a > 0);
 }
 
@@ -393,7 +444,9 @@ function screen(name) {
 function newLevel(seed) {
   W = Core.makeLevel(seed);
   fx = { ripples: [], parts: [], texts: [], ghosts: [], trails: [] };
-  stats = { perfect: 0, splits: 0, merges: 0, bonus: 0 };
+  stats = { perfect: 0, splits: 0, merges: 0, bonus: 0, combo: 0, maxCombo: 0, lastPB: -99, fever: false };
+  flash = { gold: 0, red: 0 };
+  Sound.setFever(false);
 }
 
 function startGame() {
@@ -410,6 +463,7 @@ function onSongEnd() { if (state === 'outro' || state === 'result') Sound.play('
 function endGame(early) {
   if (state !== 'play') return;
   Core.release(W); grabbedBy = null;
+  if (stats.fever) { stats.fever = false; Sound.setFever(false); }
   finalScore = score();
   state = 'outro'; outroAt = performance.now() / 1000;
   if (early) Sound.play('game', onSongEnd, 0.03, 11 * 16);   // 直接跳到收尾和弦
@@ -440,7 +494,7 @@ function showResult() {
   const g = Core.grade(finalScore), [t1, t2] = TITLES[g];
   $('#final').textContent = g;
   $('#result-title').textContent = t1;
-  $('#summary').innerHTML = `${t2}<br>最大水珠佔 <b>${Math.round(Core.share(W) * 100)}%</b>　踩拍合併 <b>${stats.perfect}</b> 次　斷開 <b>${stats.splits}</b> 次`;
+  $('#summary').innerHTML = `${t2}<br>最大水珠佔 <b>${Math.round(Core.share(W) * 100)}%</b>　踩拍 <b>${stats.perfect}</b> 次　最高 <b>${stats.maxCombo}</b> 連　斷開 <b>${stats.splits}</b> 次`;
   $('#record').textContent = stats.newBest ? `新紀錄！分數 ${Math.round(finalScore * 100)}` : `分數 ${Math.round(finalScore * 100)}　最佳 ${Math.round(stats.best * 100)}`;
   screen('result');
 }
@@ -464,22 +518,43 @@ function onEvents(ev, B) {
         // 踩拍：吃掉夠大的水珠、而且時間離最近的拍點 70ms 以內
         const off = B.p - Math.round(B.p / Sound.SPB) * Sound.SPB;
         if (Math.abs(off) < 0.07) {
-          stats.perfect++; stats.bonus = Math.min(0.08, stats.bonus + 0.005);
-          ripple(e.to.x, e.to.y, e.to.r, 40 + e.to.r * 0.4, 'rgba(255,214,140,A)', 0.55, 0.9);
-          sparkles(e.bx, e.by, 3, 120);
-          floatText(stats.perfect > 1 ? `踩拍 ×${stats.perfect}` : '踩拍！', e.to.x, e.to.y - e.to.r - 24, '#ffd98a', 22);
-          Sound.sfx.perfect(stats.perfect);
-          hint(`踩在拍子上！合併更亮`, 'good', 1);
+          // 連擊：上一次踩拍在 4 拍以內就接得上；4 連以上進入 FEVER
+          const bi = Math.round(B.p / Sound.SPB);
+          stats.combo = bi - stats.lastPB <= 4 ? stats.combo + 1 : 1; stats.lastPB = bi;
+          stats.maxCombo = Math.max(stats.maxCombo, stats.combo);
+          stats.perfect++; stats.bonus = Math.min(0.12, stats.bonus + (stats.fever ? 0.01 : 0.005));
+          flash.gold = 1;
+          ripple(e.to.x, e.to.y, e.to.r, 60 + e.to.r * 0.5, 'rgba(255,214,140,A)', 0.55, 1);
+          ripple(e.to.x, e.to.y, e.to.r * 1.1, 120 + e.to.r * 0.6, 'rgba(255,255,255,A)', 0.4, 0.6);
+          sparkles(e.bx, e.by, 6, 200);
+          fx.texts = fx.texts.filter(t => !t.combo);   // 新的連擊字取代舊的，不疊在一起
+          floatText(stats.combo > 1 ? `${stats.combo} 連踩拍！` : '踩拍！', e.to.x, e.to.y - e.to.r - 26, stats.fever ? '#ffc93c' : '#ffe2a0', 30).combo = true;
+          Sound.sfx.perfect(stats.combo);
+          if (!stats.fever && stats.combo >= 4) {
+            stats.fever = true; Sound.setFever(true); Sound.sfx.fever();
+            sparkles(e.to.x, e.to.y, 14, 420);
+            hint('FEVER！踩拍加倍', 'fever', 2.2);
+          }
         } else Sound.sfx.merge(stats.merges, e.to.r > 90);
       } else if (e.held) Sound.sfx.merge(stats.merges, false);
     } else if (e.type === 'split') {
-      if (state === 'play') { stats.splits++; Sound.sfx.split(); hint('水珠拉斷了，放慢一點', 'warn', 1.4); }
+      if (state === 'play') {
+        stats.splits++; Sound.sfx.split(); flash.red = 1;
+        hint(stats.fever ? '斷了！FEVER 結束' : '水珠拉斷了，放慢一點', 'warn', 1.4);
+        breakCombo();
+      }
       grabbedBy = null;
       spray(e.x, e.y, 14, 420, 5);
       floatText('斷了！', e.x, e.y - e.r - 20, '#ff6b70', 22);
       ripple(e.x, e.y, e.r * 0.5, 60, 'rgba(255,120,120,A)', 0.4, 0.8);
     }
   }
+}
+
+function breakCombo() { stats.combo = 0; if (stats.fever) { stats.fever = false; Sound.setFever(false); } }
+// 超過 4 拍沒踩到，連擊就斷
+function comboTick(B) {
+  if (stats.combo && B.b - stats.lastPB > 4) { if (stats.fever) hint('節奏斷了，FEVER 結束', 'warn', 1.2); breakCombo(); }
 }
 
 function hint(text, cls = '', dur = 1.2) { hintMsg = { text, cls, until: performance.now() / 1000 + dur }; }
@@ -541,6 +616,7 @@ function run(t) {
     } else if (state === 'play') {
       keyTick(dt);
       onEvents(Core.step(W, dt), B);
+      comboTick(B);
       rain(B);
       if (timeLeft() <= 0) endGame(false);
     } else if (state === 'outro' || state === 'result') outroTick(dt, t);
@@ -565,6 +641,7 @@ function outroTick(dt, t) {
   if (!resultShown && el > 2.1) showResult();
 }
 
+const beatBox = $('#beats'), beatEls = [...beatBox.children];
 function hud(B, t) {
   if (state !== 'count' && state !== 'play') return;
   const left = timeLeft();
@@ -582,10 +659,20 @@ function hud(B, t) {
   if (state === 'count') { const n = Math.max(0, Math.floor(B.p / Sound.SPB)); text = B.p < 0 ? '準備' : ['3', '2', '1', '開始！'][Math.min(3, n)]; cls = 'count'; }
   else if (hintMsg && t < hintMsg.until) { text = hintMsg.text; cls = hintMsg.cls; }
   else if (W.held && W.held.stress > 0.35) { text = '太快了！快斷了'; cls = 'warn'; }
+  else if (stats.fever) { text = `FEVER  ${stats.combo} 連`; cls = 'fever'; }
+  else if (stats.combo >= 2) { text = `踩拍 ${stats.combo} 連・4 連進 FEVER`; cls = 'good'; }
   else if (left < 4) { text = `最後 ${Math.ceil(left)} 秒！`; cls = 'warn'; }
-  else text = W.held ? '慢慢拖，碰到就會聚起來' : left > 14 ? '按住水珠，慢慢拖向另一顆' : '合併的瞬間踩在拍子上，加分';
+  else text = W.held ? '外圈縮到水珠邊緣時撞上去＝踩拍' : left > 14 ? '按住水珠，慢慢拖向另一顆' : '邊框閃的瞬間合併，加分';
   if (h.textContent !== text) h.textContent = text;
   h.className = cls;
+  // 節拍燈：四格，亮在目前這一拍
+  const lit = B.bar >= 0 ? B.inBar : -1;
+  beatEls.forEach((el, i) => {
+    el.classList.toggle('on', i === lit);
+    el.style.transform = `rotate(45deg) scale(${i === lit ? 1 + 0.55 * B.env : 1})`;
+  });
+  beatBox.classList.toggle('fever', stats.fever && state === 'play');
+  beatBox.classList.toggle('hurry', state === 'play' && left < 4);
 }
 
 // ---------- 操作 ----------

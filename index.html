@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <main id="game">
@@ -54,7 +54,7 @@
 
   <footer id="controls" class="bottom" hidden>
     <button id="pause" class="text-button">暫停</button>
-    <span id="pieces">水珠 0 顆</span>
+    <div class="mid"><div id="beats" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span id="pieces">水珠 0 顆</span></div>
     <button id="finish" class="text-button">提前收工</button>
   </footer>
 
@@ -81,7 +81,7 @@
       <h2 id="modal-title">玩法說明</h2>
       <p>剛上完奈米陶瓷封體鍍膜，引擎蓋上全是水珠。</p>
       <p>按住一顆水珠慢慢拖，碰到別顆就會聚在一起。拖太快會斷開，越大顆越要慢；拖的時候圈圈變紅就是快斷了。</p>
-      <p>合併的瞬間踩在拍子上會多加分。20 秒後，看最大那顆佔了全部水量多少。</p>
+      <p>邊框和下方節拍燈會跟著拍子閃。拖著水珠時外圈會往內縮，縮到水珠邊緣的瞬間撞上別顆就是「踩拍」，加分；連續 4 次進入 FEVER，加分翻倍。20 秒後，看最大那顆佔了全部水量多少。</p>
       <p class="scale">F → C → B → A → S</p>
       <p class="small keys">方向鍵 移動 · 空白鍵 抓／放 · Esc 暫停</p>
       <button id="resume" class="primary">知道了</button>
@@ -97,8 +97,8 @@
     </div>
   </section>
 </main>
-<script src="js/core.js?v=1"></script>
-<script src="js/audio.js?v=1"></script>
-<script src="js/game.js?v=1"></script>
+<script src="js/core.js?v=3"></script>
+<script src="js/audio.js?v=3"></script>
+<script src="js/game.js?v=3"></script>
 </body>
 </html>
